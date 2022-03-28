@@ -1,14 +1,13 @@
-const { Client, MessageMedia, LocalAuth } = require('whatsapp-web.js');
+const { Client, MessageMedia, NoAuth } = require('whatsapp-web.js');
 const express = require('express');
-const { body, validationResult } = require('express-validator');
 const socketIO = require('socket.io');
 const qrcode = require('qrcode');
 const http = require('http');
 const fs = require('fs');
-const { response } = require('express');
+const config = require('./config')
 
 const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new NoAuth(),
     puppeteer: { headless: true }
 });
 
@@ -18,9 +17,7 @@ const app= express();
 server=http.createServer(app)
 const io=socketIO(server)
 app.use(express.json());
-app.use(express.urlencoded({
-  extended: true
-}));
+app.use(express.urlencoded({extended: true}));
 
 
 app.get('/',(req,res)=>{
@@ -40,11 +37,25 @@ io.on('connection', function(socket) {
         socket.emit('message', 'whatsapp is ready');
 
       })
+      client.on('authenticated', () => {
+        socket.emit('authenticated', 'Whatsapp is authenticated!');
+        socket.emit('message', 'Whatsapp is authenticated!');
+        //console.log('AUTHENTICATED');
+      });
+    
+      client.on('auth_failure', function(session) {
+        socket.emit('message', 'Auth failure, restarting...');
+      });
+      client.on('disconnected', (reason) => {
+        socket.emit('message', 'Whatsapp is logout');
+       // console.log('Client was logged out', reason);
+    });
 })
 
 // Send message
 app.post('/send-message',  async (req, res) => {
       const number=req.body.number
+      console.log(number);
       const message= req.body.message  
     client.sendMessage(number, message).then(response => {
       res.status(200).json({
@@ -58,7 +69,28 @@ app.post('/send-message',  async (req, res) => {
       });
     });
   });
-  
+//send message to multiple contacts
+app.get('/mContact',async (req,res)=>{
+  let contactlist = fs.readFileSync(config.contact)
+  contactlist = contactlist.toString().split(/\r?\n/)
+  for (const contact of contactlist) {
+        const precontent = fs.readFileSync(config.content)
+        let cont = encodeURI(precontent)
+        let content=decodeURI(cont)
+        client.sendMessage(contact,content).then(response => {
+             res.status(200).json({
+               status: true,
+               response: response
+              });
+          }).catch(err => {
+               res.status(500).json({
+                 status: false,
+                 response: err
+                });
+              });
+ 
+   }
+});
 
 
 
